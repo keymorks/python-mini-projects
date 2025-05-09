@@ -21,8 +21,8 @@
 Убедитесь, что у вас установлен Python 3.10 или новее
 ```bash
 pip install PyQt5
-git clone https://github.com/keymorks/calculator.git
-cd calculator
+git clone https://github.com/keymorks/python-mini-projects.git
+cd python-mini-projects && cd calculator
 python3 . -m
 ```
 
