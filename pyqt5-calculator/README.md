@@ -18,11 +18,15 @@
 - Система сборки: стандартный Python (без зависимостей кроме PyQt5)
 
 ## ⚙️ Установка
-Убедитесь, что у вас установлен Python 3.10 или новее
+- Убедитесь, что у вас установлен Python 3.10 или новее
+- Установите и перейдите в директорию программы
 ```bash
 pip install PyQt5
 git clone https://github.com/keymorks/python-mini-projects.git
 cd python-mini-projects && cd pyqt5-calculator
+```
+- Запустите программу
+```bash
 python3 . -m
 ```
 
