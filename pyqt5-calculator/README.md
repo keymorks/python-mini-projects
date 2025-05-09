@@ -22,7 +22,7 @@
 ```bash
 pip install PyQt5
 git clone https://github.com/keymorks/python-mini-projects.git
-cd python-mini-projects && cd calculator
+cd python-mini-projects && cd pyqt5-calculator
 python3 . -m
 ```
 
