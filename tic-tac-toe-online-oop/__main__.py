@@ -1,9 +1,11 @@
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QLabel, QVBoxLayout, QWidget
-from PyQt5.QtWidgets import QGridLayout
+from PyQt5.QtWidgets import QGridLayout, QLineEdit
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import Qt  
+from PyQt5.QtWebSockets import QWebSocket
+from PyQt5.QtCore import Qt, QUrl
 from styles import GameStyles
 import sys
+import json
 
 class Player:
     """Класс для создания игроков"""
@@ -84,8 +86,31 @@ class Game:
             self.state = "finished"
 
         if board.is_full():
-            self.winner = "even score"
+            self.winner = "draw"
             self.state = "finished"
+
+class WidgetFactory:
+    def create_button(self, text: str, size, style, on_click=None) -> QPushButton:
+        button = QPushButton(text)
+        button.setFixedSize(*size)
+        button.setStyleSheet(style)
+        if on_click:
+            button.clicked.connect(on_click)
+        return button
+    
+    def create_label(self, text: str, style, fixed_height=None) -> QLabel:
+        label = QLabel(text)
+        label.setStyleSheet(style)
+        if fixed_height:
+            label.setFixedHeight(fixed_height)
+        return label
+    
+    def create_line_edit(self, placeholder: str, size, style) -> QLineEdit:
+        line_edit = QLineEdit()
+        line_edit.setPlaceholderText(placeholder)
+        line_edit.setFixedSize(*size)
+        line_edit.setStyleSheet(style)
+        return line_edit
 
 class Window(QMainWindow):
     """ Создает окно игры """
@@ -103,32 +128,44 @@ class Window(QMainWindow):
         self.menu_widget = QWidget()
         self.game_widget = QWidget()
         self.retry_menu_widget = QWidget()
+        self.online_menu_widget = QWidget()
         
         # Добавляем их в стак для переключения
         self.stack.addWidget(self.menu_widget)
         self.stack.addWidget(self.game_widget)
         self.stack.addWidget(self.retry_menu_widget)
+        self.stack.addWidget(self.online_menu_widget)
+
+        self.factory = WidgetFactory()
         
         # Подгатавливаем виджеты для экранов
         self.setup_menu()
         self.setup_game()
         self.setup_retry_menu()
+
+        self.setup_online_menu()
+        self.online_game = None
         
         self.stack.setCurrentWidget(self.menu_widget)
+
+    def add_to_layout(self, layout, widget, alignment=Qt.AlignCenter): # type: ignore
+        layout.addWidget(widget, alignment=alignment)
 
     def setup_menu(self):
         """ Подготавливает главное меню """
         layout = QVBoxLayout() # Холст для виджетов
 
-        title = QLabel("Выберите режим:") # Заголовок меню
-        title.setStyleSheet(GameStyles.menu_title_style)
-        layout.addWidget(title, alignment=Qt.AlignCenter)
+        # Заголовок меню
+        menu_title = self.factory.create_label("Выберите режим:", GameStyles.menu_title_style) 
+        self.add_to_layout(layout, menu_title)
 
-        btn_local = QPushButton("Локальная игра") # Кнопка локальной игры
-        btn_local.clicked.connect(lambda: self.on_local_game_click()) 
-        btn_local.setFixedSize(250, 65)
-        btn_local.setStyleSheet(GameStyles.menu_button_style)
-        layout.addWidget(btn_local, alignment=Qt.AlignCenter)
+        # Кнопка локальной игры
+        local_game_button = self.factory.create_button("Локальная игра", GameStyles.menu_button_size, GameStyles.menu_button_style, self.on_local_game_click) 
+        self.add_to_layout(layout, local_game_button)
+
+        # Кнопка онлайн игры
+        online_game_button = self.factory.create_button("Онлайн игра", GameStyles.menu_button_size, GameStyles.menu_button_style, self.on_online_game_click) 
+        self.add_to_layout(layout, online_game_button)
 
         layout.addStretch() # Заполняем пустое пространство между краями экрана и виджетами
         layout.setContentsMargins(50, 250, 50, 250) # Окончательно выравниваем виджеты
@@ -146,18 +183,15 @@ class Window(QMainWindow):
     
         self.grid_layout.setContentsMargins(80, 20, 80, 20) # Создаем отступы для содержимого
 
-        self.game_label = QLabel() # Отображает текущего игрока
-        self.game_label.setAlignment(Qt.AlignCenter)
-        self.game_label.setFixedHeight(50)
-        self.game_label.setStyleSheet(GameStyles.game_label_style)
-        main_layout.addWidget(self.game_label)
+        self.game_label = self.factory.create_label("", GameStyles.game_label_style, 50)
+        self.add_to_layout(main_layout, self.game_label)
         
         # Создаем кнопки игрового поля
         self.buttons = []
         for row in range(3):
             for col in range(3):
                 btn = QPushButton()
-                btn.setFixedSize(160, 160)  
+                btn.setFixedSize(*GameStyles.game_button_size)  
                 btn.setStyleSheet(GameStyles.game_button_style)
                 btn.clicked.connect(lambda _, r=row, c=col: self.on_cell_click(r, c))
                 self.grid_layout.addWidget(btn, row, col)
@@ -173,57 +207,79 @@ class Window(QMainWindow):
         main_layout.addStretch() # Заполняем пустое пространство
         main_layout.setContentsMargins(50, 125, 50, 275) # Создаем отступы для содержимого
         
-        self.retry_label = QLabel() # Отображает результат игры
-        self.retry_label.setAlignment(Qt.AlignCenter)
-        self.retry_label.setFixedHeight(50)
-        self.retry_label.setStyleSheet(GameStyles.menu_title_style)
-        main_layout.addWidget(self.retry_label)
+        self.retry_label = self.factory.create_label("", GameStyles.menu_title_style, 50)
+        self.add_to_layout(main_layout, self.retry_label)
 
-        btn_retry = QPushButton("Играть заново") # Кнопка для повторной игры
-        btn_retry.clicked.connect(self.restart_game)
-        btn_retry.setFixedSize(250, 65)
-        btn_retry.setStyleSheet(GameStyles.menu_button_style)
-        main_layout.addWidget(btn_retry, alignment=Qt.AlignCenter)
+        retry_button = self.factory.create_button("Играть заново", GameStyles.menu_button_size, GameStyles.menu_button_style, self.restart_game)
+        self.add_to_layout(main_layout, retry_button)
 
-        btn_menu = QPushButton("Меню") # Кнопка для выхода в меню
-        btn_menu.clicked.connect(self.back_to_menu)
-        btn_menu.setFixedSize(250, 65)
-        btn_menu.setStyleSheet(GameStyles.menu_button_style)
-        main_layout.addWidget(btn_menu, alignment=Qt.AlignCenter)
-
+        back_to_menu_button = self.factory.create_button("Меню", GameStyles.menu_button_size, GameStyles.menu_button_style, self.back_to_menu)
+        self.add_to_layout(main_layout, back_to_menu_button)
+        
         self.retry_menu_widget.setLayout(main_layout) # Подготовка окончена, сохраняем
 
-    def on_cell_click(self, row, col):
+    def setup_online_menu(self):
+        """ Подготавливает меню результата """
+        main_layout = QVBoxLayout() # Главный холст
+
+        main_layout.addStretch() # Заполняем пустое пространство
+        main_layout.setContentsMargins(50, 100, 50, 225) # Создаем отступы для содержимого
+        
+
+        self.status = self.factory.create_label("", GameStyles.menu_title_style, 50)
+        self.add_to_layout(main_layout, self.status)
+
+        self.server_ip_input = self.factory.create_line_edit("IP сервера", GameStyles.input_size, GameStyles.input_style)
+        self.add_to_layout(main_layout, self.server_ip_input)
+
+        self.game_id_input = self.factory.create_line_edit("ID игры", GameStyles.input_size, GameStyles.input_style)
+        self.add_to_layout(main_layout, self.game_id_input)
+
+        self.nickname_input = self.factory.create_line_edit("Ваш ник", GameStyles.input_size, GameStyles.input_style)
+        self.add_to_layout(main_layout, self.nickname_input)
+
+        connect_button = self.factory.create_button("Подключиться", GameStyles.menu_button_size, GameStyles.menu_button_style, self.on_connect_click)
+        self.add_to_layout(main_layout, connect_button)
+
+        back_to_menu_button = self.factory.create_button("Меню", GameStyles.menu_button_size, GameStyles.menu_button_style, self.back_to_menu)
+        self.add_to_layout(main_layout, back_to_menu_button)
+
+        self.online_menu_widget.setLayout(main_layout) # Подготовка окончена, сохраняем
+
+    def on_cell_click(self, row: int, col: int):
         """ Обрабатывает клик по клетке игрового поля """
-        # Проверяем, что игра активна
-        if not hasattr(self, 'game') or self.game.state != "in game":
-            return
+        position = row*3 + col
+        btn = self.buttons[position] # Получаем кнопку по координатам
         
-        btn: QPushButton = self.buttons[row*3 + col] # Получаем кнопку по координатам
+        if self.online_game:
+            if self.online_game.status == "Connected":
+                self.online_game.make_move(position)
+        else:
+            if not hasattr(self, 'game') or self.game is None:
+                return
         
-        # Игнорируем занятые клетки
-        if btn.text():
-            return
+            # Игнорируем занятые клетки
+            if btn.text():
+                return
+            
+            # Обновляем UI и игровое состояние
+            current_player = self.game.get_current_player()
+            btn.setText(current_player.symbol) 
+            btn.setStyleSheet(f"{GameStyles.game_button_style}".replace("{color}", current_player.color))
         
-        # Обновляем UI и игровое состояние
-        current_player = self.game.get_current_player()
-        btn.setText(current_player.symbol) 
-        btn.setStyleSheet(f"{GameStyles.game_button_style}".replace("{color}", current_player.color))
-    
-        # Обновляем игровую логику
-        if self.game.board.make_move(current_player, row, col):
-            self.game.update_game_state()
-            if self.game.is_game_over():
-                self.show_game_result()
+            # Обновляем игровую логику
+            if self.game.board.make_move(current_player, row, col):
+                self.game.update_game_state()
+                if self.game.is_game_over():
+                    self.show_game_result(self.game.winner)
 
-        # Переключаем игрока
-        self.game.next_player()
-        self.game_label.setText(f"Ход: {self.game.get_current_player().symbol}")
+            # Переключаем игрока
+            self.game.next_player()
+            self.game_label.setText(f"Ход: {self.game.get_current_player().symbol}")
 
-    def show_game_result(self):
+    def show_game_result(self, winner: str):
         """ Переключает в меню результата """
-        winner = self.game.winner
-        if winner == "even score":
+        if winner == "draw":
             msg = "Ничья!"
         else:
             msg = f"Победил: {winner}"
@@ -233,23 +289,134 @@ class Window(QMainWindow):
     
     def on_local_game_click(self):
         """ Обрабатывает клик по кнопке создания локальной игры """
-        self.game = Game(Player("O", "blue"), Player("X", "red"))
+        self.game = Game(Player("O", GameStyles.color_O), Player("X", GameStyles.color_X))
         self.game_label.setText(f"Ход: {self.game.get_current_player().symbol}")
         self.clear_board()
         self.stack.setCurrentWidget(self.game_widget)  
 
-    def restart_game(self):
+    def on_online_game_click(self):
+        self.stack.setCurrentWidget(self.online_menu_widget)
+
+    def on_connect_click(self):
+        ip = self.server_ip_input.text()
+        game_id = self.game_id_input.text() or "default"
+        player_id = self.nickname_input.text() or "player"
+
+        self.online_game = OnlineGame(ip, game_id, player_id, self)
+
         self.stack.setCurrentWidget(self.game_widget)
-        self.on_local_game_click()
+
+    def update_online_board(self, board: list, current_player: str):
+        self.clear_board()
+        for i, symbol in enumerate(board):
+            btn = self.buttons[i]
+            if symbol == " ":
+                continue
+            btn.setText(symbol)
+            match symbol:
+                case "X":
+                    color = GameStyles.color_X
+                case "O":
+                    color = GameStyles.color_O
+                case _:
+                    color = GameStyles.color_neutral
+            btn.setStyleSheet(GameStyles.game_button_style.replace("{color}", color))
+
+        self.game_label.setText(f"Ход: {current_player}")
+
+    def restart_game(self):
+        if self.online_game is None:
+            self.stack.setCurrentWidget(self.game_widget)
+            self.on_local_game_click()
+        else:
+            # Пересоздаем подключение
+            ip = self.online_game.ip
+            game_id = self.online_game.game_id
+            player_id = self.online_game.player_id
+            
+            # Закрываем старое подключение
+            if self.online_game.websocket:
+                self.online_game.websocket.close()
+            
+            # Создаем новое подключение
+            self.online_game = OnlineGame(ip, game_id, player_id, self)
+            self.clear_board()
+            self.stack.setCurrentWidget(self.game_widget)
 
     def back_to_menu(self):
+        self.online_game = None
         self.stack.setCurrentWidget(self.menu_widget)
 
     def clear_board(self):
         for btn in self.buttons:
             btn.setText("")
-            btn.setStyleSheet(GameStyles.game_button_style)
+            btn.setStyleSheet(GameStyles.game_button_style.replace("{color}", "black"))
         
+class OnlineGame:
+    def __init__(self, ip: str, game_id: str, player_name: str, window: Window):
+        self.ip = ip
+        self.game_id = game_id
+        player_name = player_name
+        self.websocket = QWebSocket()
+        self.status = "Connecting"
+        self.window = window
+        self.status_label = window.status
+
+        # Подключаем обработчики событий
+        self.websocket.connected.connect(self.on_connected)
+        self.websocket.disconnected.connect(self.on_disconnected)
+        self.websocket.textMessageReceived.connect(self.on_message)
+        self.websocket.error.connect(self.on_error)
+        
+        # Подключение
+        url = QUrl(f"ws://{ip}/ws/{game_id}/{player_name}")
+        self.websocket.open(url)
+    
+    def on_connected(self):
+        self.set_connection_status("Connected")
+        self.get_game_state()
+
+    def on_disconnected(self):
+        self.set_connection_status("Disconnected")
+        self.window.stack.setCurrentWidget(self.window.online_menu_widget)
+
+    def on_message(self, message: str):
+        try:
+            data = json.loads(message)
+            match data["type"]:
+                case "state":
+                    self.window.update_online_board(data["board"], data["current_player"])
+                case "game_over":
+                    winner = data["winner"]
+                    if winner == "draw":
+                        self.window.show_game_result("even score")
+                    else:
+                        self.window.show_game_result(winner)
+                case _:
+                    print(f"Unknown message type: {data["type"]}")
+        except Exception as e:
+            print(f"Error processing message: {e}")
+
+    def on_error(self, error: str):
+        self.set_connection_status(f"Error: {error}")
+
+    def make_move(self, position: int):
+        message = json.dumps({
+                "type": "make_move",
+                "position": position
+            })
+        self.websocket.sendTextMessage(message)
+
+    def get_game_state(self):
+        message = json.dumps({
+            "type": "get_state",
+        })
+        self.websocket.sendTextMessage(message)
+
+    def set_connection_status(self, status: str):
+        self.status = status
+        self.status_label.setText(self.status)
+
 def main():
     app = QApplication(sys.argv)
     window = Window()
