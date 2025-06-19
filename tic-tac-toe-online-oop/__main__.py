@@ -145,6 +145,9 @@ class Window(QMainWindow):
 
         self.setup_online_menu()
         self.online_game = None
+        self.saved_ip = None
+        self.saved_game_id = None
+        self.seved_player_name = None
         
         self.stack.setCurrentWidget(self.menu_widget)
 
@@ -298,11 +301,11 @@ class Window(QMainWindow):
         self.stack.setCurrentWidget(self.online_menu_widget)
 
     def on_connect_click(self):
-        ip = self.server_ip_input.text()
-        game_id = self.game_id_input.text() or "default"
-        player_id = self.nickname_input.text() or "player"
+        self.saved_ip = self.server_ip_input.text()
+        self.saved_game_id = self.game_id_input.text() or "default"
+        self.seved_player_name = self.nickname_input.text() or "player"
 
-        self.online_game = OnlineGame(ip, game_id, player_id, self)
+        self.online_game = OnlineGame(self.saved_ip, self.saved_game_id, self.seved_player_name, self)
 
         self.stack.setCurrentWidget(self.game_widget)
 
@@ -330,9 +333,9 @@ class Window(QMainWindow):
             self.on_local_game_click()
         else:
             # Пересоздаем подключение
-            ip = self.online_game.ip
-            game_id = self.online_game.game_id
-            player_id = self.online_game.player_id
+            ip = self.saved_ip
+            game_id = self.saved_game_id
+            player_id = self.seved_player_name
             
             # Закрываем старое подключение
             if self.online_game.websocket:
@@ -382,7 +385,9 @@ class OnlineGame:
 
     def on_message(self, message: str):
         try:
+            print(message)
             data = json.loads(message)
+            print(data)
             match data["type"]:
                 case "state":
                     self.window.update_online_board(data["board"], data["current_player"])

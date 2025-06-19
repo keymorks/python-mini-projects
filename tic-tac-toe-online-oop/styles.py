@@ -70,6 +70,3 @@ class GameStyles():
             border: 2px solid #de8400;
         }
     """
-
-
-
