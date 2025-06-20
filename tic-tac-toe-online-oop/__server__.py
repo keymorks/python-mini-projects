@@ -33,7 +33,7 @@ class ConnectionManager():
             await manager.broadcast(game_id, json.dumps(game_state))
 
     async def broadcast_game_over(self, manager: 'ConnectionManager', gamemanager: 'GameManager', game_id: int):
-        winner = gamemanager.games[game_id]["winner"]
+        winner = gamemanager.games[game_id]["game"].winner
         if winner == "draw":
             message = json.dumps({
                 "type": "game_over",
@@ -45,106 +45,172 @@ class ConnectionManager():
                 "winner": winner
             })
 
-            await manager.broadcast(game_id, message)
+        await manager.broadcast(game_id, message)
+
+class Player:
+    """Класс для создания игроков"""
+    def __init__(self, name: str, symbol: str, color: str):
+        self.name = name
+        self.symbol = symbol
+        self.color = color
+
+class Board:
+    """Класс для создания поля 3x3 для крестиков-ноликов"""
+    def __init__(self):
+        self.cells = [" "]*9
+    
+    def make_move(self, player: Player, x: int, y: int) -> bool:
+        """
+        Пытается сделать ход игрока в указанную позицию
+        Возвращает True если ход допустим, иначе False
+        """
+        move_position = x + y*3
+        if self.cells[move_position] != " " or not 0<=x<3 or not 0<=y<3:
+            return False
+        self.cells[move_position] = player.symbol
+        return True
+
+    def get_board(self) -> list[str]:
+        """ Возвращает текущее состояние игрового поля """
+        return self.cells
+    
+    def is_full(self) -> bool:
+        return " " not in self.cells
+
+class Game:
+    """ Класс для создания игры """
+    winning_combinations = [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8],
+        [0, 3, 6],
+        [1, 4, 7],
+        [2, 5, 8],
+        [0, 4, 8],
+        [2, 4, 6],
+    ]
+
+    def __init__(self, player1: Player, player2: Player):
+        self.players = [player1, player2]
+        self.current_player_index = 0
+        self.state = "in game"
+        self.winner = ""
+        self.board = Board()
+
+    def get_current_player(self) -> Player:
+        """ Возвращает текущего игрока """
+        return self.players[self.current_player_index]
+    
+    def next_player(self):
+        if self.current_player_index < (len(self.players)-1):
+            self.current_player_index += 1
+        else:
+            self.current_player_index = 0
+
+    @staticmethod
+    def has_winner(board: list[str], symbol: str) -> bool:
+        for comb in Game.winning_combinations:
+            if all(board[i] == symbol for i in comb):
+                return True
+        return False
+    
+    def is_game_over(self) -> bool:
+        return self.state == "finished"
+
+    def update_game_state(self):
+        board = self.board
+        cells = board.get_board()
+        current_player = self.get_current_player()
+
+        if self.has_winner(cells, current_player.symbol):
+            self.winner = current_player.name
+            self.state = "finished"
+
+        if board.is_full():
+            self.winner = "draw"
+            self.state = "finished"
+
 
 class GameManager:
-    winning_combinations = [
-            [0, 1, 2],
-            [3, 4, 5],
-            [6, 7, 8],
-            [0, 3, 6],
-            [1, 4, 7],
-            [2, 5, 8],
-            [0, 4, 8],
-            [2, 4, 6],
-        ]
     def __init__(self):
         self.games = {}
 
     def connect_to_game(self, game_id: int, player_name: str):
+        print(self.games) 
+
         if game_id not in self.games:
             self.games[game_id] = {
-                "board": [" "] * 9,
-                "current_player": "O",
-                "players": {},
-                "state": "in game",
-                "winner": ""
+                "game": None,
+                "players": {}
             }
 
-        if player_name not in self.games[game_id]["players"]:
-            self.games[game_id]["players"][player_name] = "O" if len(self.games[game_id]["players"]) == 0 else "X"
+        self.games[game_id]["players"][player_name] = Player(player_name, "O", "blue") if len(self.games[game_id]["players"]) == 0 else Player(player_name, "X", "red")
+
+        if len(self.games[game_id]["players"]) >= 2:
+            self.games[game_id]["game"] = Game(*self.games[game_id]["players"].values())
+
+        print(self.games) 
+
+    def disconnect_from_game(self, game_id: int, player_name: str):
+        del self.games[game_id]["players"][player_name]
+        del self.games[game_id]["game"]
 
     def get_game_state(self, game_id: int):
         if game_id not in self.games:
             return None 
         
-        return {
+        if not self.games[game_id]["game"]:
+            return None
+        
+        game: Game = self.games[game_id]["game"]
+        state = {
             "type": "state",
-            "board": self.games[game_id]["board"],
-            "current_player": self.games[game_id]["current_player"],
-            "state": self.games[game_id]["state"],
-            "winner": self.games[game_id]["winner"]
+            "board": game.board.get_board(),
+            "current_player": game.get_current_player().name,
+            "state": game.state,
+            "winner": game.winner
         }
 
-    def make_move(self, game_id: int, player_name: str, position: int):
+        print(state)
+        return state
+
+    def make_move(self, game_id: int, player_name: str, x: int, y: int):
         if game_id not in self.games:
             return 
         
-        game = self.games[game_id]
+        game: Game = self.games[game_id]["game"]
 
-        if len(game["players"]) < 2:
+        if len(game.players) < 2:
             return
 
-        if game["board"][position] != " ":
+        if game.board.cells[y*3 + x] != " ":
             return 
         
-        if player_name not in game["players"]:
-            game["players"][player_name] = "O" if len(game["players"]) == 0 else "X"
+        print("Дошло до проверки на наличие в игре")
+        if player_name not in self.games[game_id]["players"]:
+            return
+        print("Перешло проверку на наличие в игре")
 
-        player_symbol = game["players"][player_name]
-
-        if player_symbol != game["current_player"]:
+        current_player: Player = game.get_current_player()
+        
+        print("Дошло до проверки")
+        if not self.games[game_id]["players"][player_name].name == current_player.name:
             return 
         
-        game["board"][position] = player_symbol
+        print("Дошло до хода")
+        game.board.make_move(current_player, x, y)
 
-        self.update_game_state(game_id)
-        state = game["state"]
+        game.update_game_state()
+
+        state = game.state
 
         if state == "finished":
             return
 
-        self.games[game_id]["current_player"] = "O" if self.games[game_id]["current_player"] == "X" else "X"
-    
-    def update_game_state(self, game_id: int):
-        if game_id not in self.games:
-            return
-        
-        game = self.games[game_id]
-        board = game["board"]
-        current_player = game["current_player"]
-
-        if self.has_winner(board, current_player):
-            self.games[game_id]["winner"] = current_player
-            self.games[game_id]["state"] = "finished"
-
-        elif self.is_board_full(board):
-            self.games[game_id]["winner"] = "draw"
-            self.games[game_id]["state"] = "finished"
-
-    def has_winner(self, board: list[str], symbol: str) -> bool:
-        for comb in self.winning_combinations:
-            if all(board[i] == symbol for i in comb):
-                return True
-        return False
-
-    def is_board_full(self, board: list[str]) -> bool:
-        if " " not in board:
-            return True
-        return False
+        game.next_player()
 
 app = FastAPI()
-app.state.manager = ConnectionManager()
+app.state.connectionmanager = ConnectionManager()
 app.state.gamemanager = GameManager()
 
 @app.get("/")
@@ -153,10 +219,10 @@ def get(request: Request):
 
 @app.websocket("/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: int, player_name: str):
-    manager: ConnectionManager = websocket.app.state.manager
+    connectionmanager: ConnectionManager = websocket.app.state.connectionmanager
     gamemanager: GameManager = websocket.app.state.gamemanager
 
-    await manager.connect(websocket, game_id, player_name)
+    await connectionmanager.connect(websocket, game_id, player_name)
     gamemanager.connect_to_game(game_id, player_name)
     
     while True:
@@ -166,24 +232,30 @@ async def websocket_endpoint(websocket: WebSocket, game_id: int, player_name: st
                 message = json.loads(data)
                 
                 if message["type"] == "get_state":
-                    await manager.broadcast_game_state(manager, gamemanager, game_id)
+                    await connectionmanager.broadcast_game_state(connectionmanager, gamemanager, game_id)
 
                 elif message["type"] == "make_move":
-                    position = message["position"]
+                    row = message["row"]
+                    col = message["col"]
             
-                    gamemanager.make_move(game_id, player_name, position)
-                    await manager.broadcast_game_state(manager, gamemanager, game_id)
-                    game_state = gamemanager.games[game_id]["state"]
+                    gamemanager.make_move(game_id, player_name, col, row)
+                    await connectionmanager.broadcast_game_state(connectionmanager, gamemanager, game_id)
+                    game_state = gamemanager.games[game_id]["game"].state
+                    print(gamemanager.games)
+                    print(gamemanager.games[game_id]["game"].board.get_board())
+                    print(game_state)
+                    print(gamemanager.games[game_id]["game"].winner)
                     
                     if game_state == "finished":
-                        await manager.broadcast_game_over(manager, gamemanager, game_id)
+                        await connectionmanager.broadcast_game_over(connectionmanager, gamemanager, game_id)
                         del gamemanager.games[game_id]
                     else:
-                        await manager.broadcast_game_state(manager, gamemanager, game_id)
+                        await connectionmanager.broadcast_game_state(connectionmanager, gamemanager, game_id)
             except Exception as e:
                 print(f"Server error: {e}")
         except WebSocketDisconnect:
-            await manager.disconnect(game_id, player_name)
+            gamemanager.disconnect_from_game(game_id, player_name)
+            await connectionmanager.disconnect(game_id, player_name)
 
 if __name__ == "__main__":
 	uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info", ws_ping_interval=20, ws_ping_timeout=20)

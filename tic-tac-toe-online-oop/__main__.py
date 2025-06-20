@@ -256,7 +256,7 @@ class Window(QMainWindow):
         
         if self.online_game:
             if self.online_game.status == "Connected":
-                self.online_game.make_move(position)
+                self.online_game.make_move(row, col)
         else:
             if not hasattr(self, 'game') or self.game is None:
                 return
@@ -405,10 +405,11 @@ class OnlineGame:
     def on_error(self, error: str):
         self.set_connection_status(f"Error: {error}")
 
-    def make_move(self, position: int):
+    def make_move(self, row: int, col: int):
         message = json.dumps({
                 "type": "make_move",
-                "position": position
+                "row": row,
+                "col": col
             })
         self.websocket.sendTextMessage(message)
 
