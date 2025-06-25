@@ -154,7 +154,7 @@ class Window(QMainWindow):
         
         self.stack.setCurrentWidget(self.menu_widget)
 
-    def add_to_layout(self, layout, widget, alignment=Qt.AlignCenter): # type: ignore
+    def add_to_layout(self, layout: QVBoxLayout, widget, alignment=Qt.AlignCenter): # type: ignore
         layout.addWidget(widget, alignment=alignment)
 
     def setup_menu(self):
