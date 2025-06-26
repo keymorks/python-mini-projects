@@ -215,7 +215,7 @@ class Window(QMainWindow):
         main_layout.setContentsMargins(50, 125, 50, 275) # Создаем отступы для содержимого
         
         # Текст для отображения исхода игры
-        self.retry_label = self.factory.create_label("", GameStyles.menu_title_style, 50)
+        self.retry_label = self.factory.create_label("", GameStyles.menu_title_style, 25)
         self.add_to_layout(main_layout, self.retry_label)
 
         # Кнопка играть заново
