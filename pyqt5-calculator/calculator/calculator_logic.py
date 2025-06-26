@@ -1,6 +1,10 @@
 from typing import List
 
 class CalculatorLogic():
+    """ 
+    Вычисляет арифметические выражения методом рекурсивного спуска 
+    Возвращает результат вычислений в виде float
+    """
     def a(self, tokens: List[str]) -> float:
         result = self.b(tokens)
         while len(tokens) > 0 and tokens[0] in ("+", "-"):

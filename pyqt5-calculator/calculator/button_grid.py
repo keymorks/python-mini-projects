@@ -3,6 +3,7 @@ from button_factory import ButtonFactory
 from PyQt5.QtWidgets import QGridLayout
 
 class ButtonGrid():
+    """ Класс для создания панели кнопок """
     @staticmethod
     def create_buttons(window, grid: QGridLayout):
         buttons = [
